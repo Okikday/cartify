@@ -1,0 +1,96 @@
+name: Flutter Build & Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release (e.g. v1.0.0).'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true 
+
+      # - name: Decode Keystore
+      #   run: |
+      #     echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $HOME/upload-keystore.jks
+
+      # - name: Create Configuration Files
+      #   env:
+      #     KEY_PROPERTIES_B64: ${{ secrets.KEY_PROPERTIES_B64 }}
+      #     ENV_FILE_CONTENT_B64: ${{ secrets.ENV_FILE_CONTENT_B64 }}
+      #     GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+      #     FIREBASE_OPTIONS_DART_B64: ${{ secrets.FIREBASE_OPTIONS_DART_B64 }}
+      #   run: |
+      #     mkdir -p lib android/app
+      #     # Only decode and create if the secrets are provided
+      #     if [ -n "$KEY_PROPERTIES_B64" ]; then echo "$KEY_PROPERTIES_B64" | base64 --decode > android/key.properties; fi
+      #     if [ -n "$ENV_FILE_CONTENT_B64" ]; then echo "$ENV_FILE_CONTENT_B64" | base64 --decode > .env; else touch .env; fi
+      #     if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > android/app/google-services.json; fi
+      #     if [ -n "$FIREBASE_OPTIONS_DART_B64" ]; then echo "$FIREBASE_OPTIONS_DART_B64" | base64 --decode > lib/firebase_options.dart; fi
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Adjust Gradle Memory for CI Runner
+        run: |
+          sed -i 's/-Xmx8G/-Xmx3G/g' android/gradle.properties
+          sed -i 's/-XX:MaxMetaspaceSize=4G/-XX:MaxMetaspaceSize=1G/g' android/gradle.properties
+
+      - name: Run Build Runner
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (Split per ABI)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-arm64-v8a-release
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-armeabi-v7a-release
+          path: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-x86_64-release
+          path: build/app/outputs/flutter-apk/app-x86_64-release.apk
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-*-release.apk
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag_name || github.ref_name }}
+          draft: false
+          prerelease: false
+        # env:
+        #   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -5,15 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-void main() async{
-  
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
   await Hive.initFlutter();
   await HiveData.initHiveData();
-  final hiveData = HiveData();
-  await hiveData.initSecureHiveData();
-  
+  // final hiveData = HiveData();
+  // await hiveData.initSecureHiveData();
+
   runApp(const ProviderScope(child: App()));
-  
 }
